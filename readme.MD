@@ -1,4 +1,4 @@
-# Heimðall Industries StarAtlas Automation
+# Mining.game automation
 
 You need to have your private key in a file called information.json.
 Be careful to whom can access your file.
