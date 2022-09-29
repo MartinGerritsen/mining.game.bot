@@ -461,7 +461,7 @@ const printError = (e) => Write.printLine([{
   text: ` Something went wrong: ${e.method || e.reason}.\n`,
   color: Write.colors.fgYellow,
 },{
-  text: `Error code: ${e.code}`,
+  text: `Error code: ${e.code}!`,
   color: Write.colors.fgRed,
 }]);
 
