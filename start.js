@@ -246,7 +246,7 @@ const getNftInformation = async () => {
 const getInventoryInformation = async (manual = false) => {
   if (manual) {
     Write.printLine({
-      text: ` Starting get inventory process.`,
+      text: ` Refreshing inventory.`,
       color: Write.colors.fgYellow,
     });
   }
@@ -516,79 +516,35 @@ const donate = async () => {
         },
       ]);
       const donationWithDecimals = (donationAmount * decimals).toString();
-      const estimatedApproveGas = await wattTokenContract.estimateGas.approve(
-        multiSendContract.address,
-        donationWithDecimals
-      );
-      const unsignedApproveTx = {
-        ...(await wattTokenContract.populateTransaction.approve(
-          multiSendContract.address,
-          donationWithDecimals
-        )),
-        chainId: 137,
-        gasLimit: estimatedApproveGas,
-        gasPrice: await provider.getGasPrice(),
-        nonce: await provider.getTransactionCount(user.address, "pending"),
-      };
-      const signedApproveTx = await wallet.signTransaction(unsignedApproveTx);
-      Write.printLine([
-        {
-          text: ` Approving WATT usage for ${donationAmount} WATT.`,
-          color: Write.colors.fgGreen,
-        },
-      ]);
-      const approveTransaction = await provider.sendTransaction(
-        signedApproveTx
-      );
-      await approveTransaction.wait(1);
-      Write.printLine([
-        {
-          text: ` WATT usage approval sent.`,
-          color: Write.colors.fgGreen,
-        },{
-          text: `\n Awaiting confirmation (https://polygonscan.com/tx/${approveTransaction.hash}).`,
-          color: Write.colors.fgGreen,
-        },
-      ]);
-
       const donationProps = [
-        wattTokenContract.address,
-        [donationAddress],
-        [donationWithDecimals],
+        donationAddress,
+        donationWithDecimals
       ];
-      const estimatedDonationGas =
-        await multiSendContract.estimateGas.multisendToken(...donationProps);
-      const { data, to, from } =
-        await multiSendContract.populateTransaction.multisendToken(
-          ...donationProps
-        );
 
-      const unsignedDonationTx = {
-        data, to, from,
-        chainId: 137,
-        gasLimit: estimatedDonationGas,
+      const unsignedDonationTransaction = {
+          ...(await wattTokenContract.populateTransaction.transfer(
+              ...donationProps
+          )),
+        nonce: provider.getTransactionCount(user.address, "latest"),
+        gasLimit: await wattTokenContract.estimateGas.transfer(
+            ...donationProps
+        ),
         gasPrice: await provider.getGasPrice(),
-        nonce:
-            (await provider.getTransactionCount(user.address, "pending")) + 1,
-      };
-      const signedDonationTx = await wallet.signTransaction(unsignedDonationTx);
+        chainId: 137,
+      }
 
-      const donationTransaction = await provider.sendTransaction(signedDonationTx);
-      Write.printLine([
-        {
-          text: ` WATT usage confirmed. Sending donation of ${donationAmount} WATT.`,
-          color: Write.colors.fgGreen,
-        },{
-          text: `\n Awaiting confirmation (https://polygonscan.com/tx/${donationTransaction.hash}).`,
-          color: Write.colors.fgGreen,
-        },
-      ]);
-      await approveTransaction.wait(1);
+      const signedDonationTransaction = await wallet.signTransaction(unsignedDonationTransaction);
+      const donationTransaction = await provider.sendTransaction(signedDonationTransaction);
+      await donationTransaction.wait(1);
+
       Write.printLine([{
         text: ` Donated ${donationAmount} WATT to ${donationAddress}, thank you!`,
         color: Write.colors.fgGreen,
+      },{
+        text: `\n For tx details: https://polygonscan.com/tx/${donationTransaction.hash}.`,
+        color: Write.colors.fgGreen,
       }]);
-      await getInventoryInformation(true);
+      await gatherInformation();
     } catch (e) {
       printError(e);
     }
@@ -634,6 +590,7 @@ const startInputTracking = () => {
     } else if (character?.toString() === "d") {
       return donate();
     } else if (character?.toString() === "r") {
+      clearInterval(runningProcess);
       return reset();
     } else if (character?.toString() === "s") {
       return stakeItems(true);
