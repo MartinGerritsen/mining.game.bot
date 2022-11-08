@@ -1,7 +1,7 @@
 require("dotenv").config();
 const { ethers } = require("ethers");
 const readlineModule = require("readline");
-const prompt = require('prompt-sync')({sigint: true});
+const prompt = require("prompt-sync")({ sigint: true });
 const args = require("minimist")(
   process.argv.filter((val) => val.includes("="))
 );
@@ -11,14 +11,15 @@ const {
   user,
   wattClaimTrigger,
   wattAutoBuy,
-  donationAddress
+  donationAddress,
 } = require("./lib/config");
 const {
   wattToken,
   maticToken,
   miningGame,
   miningGameNft,
-  miningGameMarket, multiSend,
+  miningGameMarket,
+  multiSend,
 } = require("./lib/contracts");
 
 const intervalTime = args.interval || 3600000; // every hour
@@ -49,14 +50,14 @@ const miningGameNftContract = new ethers.Contract(
   signer
 );
 const miningGameMarketContract = new ethers.Contract(
-    miningGameMarket.address,
-    miningGameMarket.abi,
-    signer
+  miningGameMarket.address,
+  miningGameMarket.abi,
+  signer
 );
 const multiSendContract = new ethers.Contract(
-    multiSend.address,
-    multiSend.abi,
-    signer
+  multiSend.address,
+  multiSend.abi,
+  signer
 );
 
 let runningProcess;
@@ -89,7 +90,6 @@ const getBalances = async (manual = false) => {
 };
 
 const checkApprovals = async () => {
-
   await miningGameNftContract
     .isApprovedForAll(user.address, miningGameContract.address)
     .then(async (isApproved) => {
@@ -159,7 +159,7 @@ const claimWatt = async (manual = false) => {
   let total = 0;
   let counter = 0;
   for (const stakingItem of stakingItems) {
-    if (stakingItem.pending > 10) {
+    if (stakingItem.pending > 50) {
       total = total + stakingItem.pending;
       const estimatedGas = await miningGameContract.estimateGas.withdrawRewards(
         stakingItem.id
@@ -469,7 +469,7 @@ const orderFromMarket = async (id, manual = false, onInit = false) => {
       } catch (e) {
         printError(e);
       }
-    } else if(!onInit) {
+    } else if (!onInit) {
       Write.printLine({
         text: " Not enough WATT to order.",
         color: Write.colors.fgYellow,
@@ -490,8 +490,8 @@ const donate = async () => {
     },
   ]);
 
-  const donationAmount = prompt(' Amount: ');
-  if(isNaN(donationAmount) || donationAmount <= 0) {
+  const donationAmount = prompt(" Amount: ");
+  if (isNaN(donationAmount) || donationAmount <= 0) {
     Write.printLine([
       {
         text: " That is not a valid amount.",
@@ -501,7 +501,9 @@ const donate = async () => {
   } else if (balances.watt < donationAmount) {
     Write.printLine([
       {
-        text: ` Tried to donate ${donationAmount} WATT, but you only have ${balances.watt.toFixed(2)} WATT available`,
+        text: ` Tried to donate ${donationAmount} WATT, but you only have ${balances.watt.toFixed(
+          2
+        )} WATT available`,
         color: Write.colors.fgRed,
       },
     ]);
@@ -513,14 +515,15 @@ const donate = async () => {
           color: Write.colors.fgYellow,
         },
       ]);
+      const donationWithDecimals = (donationAmount * decimals).toString();
       const estimatedApproveGas = await wattTokenContract.estimateGas.approve(
-          multiSendContract.address,
-          donationAmount.toString()
+        multiSendContract.address,
+        donationWithDecimals
       );
       const unsignedApproveTx = {
         ...(await wattTokenContract.populateTransaction.approve(
-            multiSendContract.address,
-            donationAmount.toString()
+          multiSendContract.address,
+          donationWithDecimals
         )),
         chainId: 137,
         gasLimit: estimatedApproveGas,
@@ -528,28 +531,37 @@ const donate = async () => {
         nonce: await provider.getTransactionCount(user.address, "pending"),
       };
       const signedApproveTx = await wallet.signTransaction(unsignedApproveTx);
-      Write.printLine([{
-        text: ` Approving WATT usage for ${donationAmount} WATT.`,
-        color: Write.colors.fgGreen,
-      }]);
-      const approveTransaction = await provider.sendTransaction(signedApproveTx);
+      Write.printLine([
+        {
+          text: ` Approving WATT usage for ${donationAmount} WATT.`,
+          color: Write.colors.fgGreen,
+        },
+      ]);
+      const approveTransaction = await provider.sendTransaction(
+        signedApproveTx
+      );
       await approveTransaction.wait(1);
-      Write.printLine([{
-        text: ` WATT usage approved, sending donation of ${donationAmount} WATT.`,
-        color: Write.colors.fgGreen,
-      }]);
+      Write.printLine([
+        {
+          text: ` WATT usage approval sent.`,
+          color: Write.colors.fgGreen,
+        },{
+          text: `\n Awaiting confirmation (https://polygonscan.com/tx/${approveTransaction.hash}).`,
+          color: Write.colors.fgGreen,
+        },
+      ]);
 
       const donationProps = [
         wattTokenContract.address,
         [donationAddress],
-        [(donationAmount * decimals).toString()]
+        [donationWithDecimals],
       ];
-      const estimatedDonationGas = await multiSendContract.estimateGas.multisendToken(
+      const estimatedDonationGas =
+        await multiSendContract.estimateGas.multisendToken(...donationProps);
+      const { data, to, from } =
+        await multiSendContract.populateTransaction.multisendToken(
           ...donationProps
-      );
-      const { data, to, from } = await multiSendContract.populateTransaction.multisendToken(
-          ...donationProps
-      );
+        );
 
       const unsignedDonationTx = {
         data, to, from,
@@ -562,12 +574,18 @@ const donate = async () => {
       const signedDonationTx = await wallet.signTransaction(unsignedDonationTx);
 
       const donationTransaction = await provider.sendTransaction(signedDonationTx);
+      Write.printLine([
+        {
+          text: ` WATT usage confirmed. Sending donation of ${donationAmount} WATT.`,
+          color: Write.colors.fgGreen,
+        },{
+          text: `\n Awaiting confirmation (https://polygonscan.com/tx/${donationTransaction.hash}).`,
+          color: Write.colors.fgGreen,
+        },
+      ]);
       await approveTransaction.wait(1);
       Write.printLine([{
         text: ` Donated ${donationAmount} WATT to ${donationAddress}, thank you!`,
-        color: Write.colors.fgGreen,
-      }, {
-        text: `\n You can the details here: https://polygonscan.com/tx/${donationTransaction.hash}`,
         color: Write.colors.fgGreen,
       }]);
       await getInventoryInformation(true);
@@ -625,7 +643,7 @@ const startInputTracking = () => {
 
     return false;
   });
-}
+};
 const reset = async () =>
   init()
     .then(startInterval)
