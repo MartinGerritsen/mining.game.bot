@@ -4,3 +4,4 @@ node_modules
 information.json
 .idea
 .env
+mining.game.js

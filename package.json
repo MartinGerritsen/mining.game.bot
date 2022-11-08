@@ -1,20 +1,21 @@
 {
   "dependencies": {
-    "@maticnetwork/maticjs": "^3.5.0",
-    "@maticnetwork/maticjs-ethers": "^1.0.2",
-    "bs58": "5.0.0",
+    "bs58": "^5.0.0",
     "dotenv": "^16.0.2",
     "ethers": "^5.7.1",
-    "minimist": "1.2.6",
+    "esbuild": "^0.15.13",
+    "minimist": "^1.2.6",
     "node-fetch": "2.6.7",
-    "prettier": "2.7.1",
+    "prettier": "^2.7.1",
+    "prompt-sync": "^4.2.0",
     "readline": "^1.3.0"
   },
   "name": "mining.game-bot",
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "bundle": "esbuild start.js --bundle  --platform=node --minify --outfile=mining.game.js"
   },
   "author": "",
   "license": "ISC",

@@ -1,33 +1,33 @@
 # Mining.game automation
 
-You need to have your private key in a file called information.json.
-Be careful to whom can access your file.
+Welcome to the [Mining.game](https://mining.game/) automation script, created by [Martin Gerritsen](https://github.com/MartinGerritsen).
 
-run it using:
-`node .\start.js`
+This script will allow you to track the progress of your staked items and auto buy and stake new items.
 
-## Step by step
+Follow this step-by-step guide to help get you set up and if you like it,  
+please consider donating, every bit is very much appreciated.
+
+## Step-by-step
 First install the following:
  - [GIT](https://git-scm.com/downloads): You will need to install git to download this script. 
  - [Node](https://nodejs.org/en/download/): You will need to install node to be able to run this script.
 
 To download and prepare the script do the following:
- - `git clone git@github.com:MartinGerritsen/staratlas-automation.git`
- - `cd startatlas-automation`
+ - `git clone git@github.com:MartinGerritsen/mining.game.bot.git`
+ - `cd mining.game.bot`
  - `npm install`
 
 Then the final steps, remember to be careful with your private key!
- - Create the file `information.json` inside of the root directory and fill in your private key, you can check / copy / rename the example file `information.example.json`.
- - Back in the root directory now run `node .\start.js` and open Netflix!
-
-There can be some unexpected errors sometimes, which will mean that you need to restart the script, but it works pretty nicely, enjoy!
+ - Create the file `.env` by copy-pasting the file `.env.example` and renaming it.
+ - Fill in the non-optional values with your private and public key.
+ - You can now run `node .\start.js` and open Netflix!
 
 ## Optional information arguments:
 
-The following arguments can be added to your own `information.json`:
+The following values are optional in the `.env`:
 
- - autoBuy: place the ship mint address here to automatically buy this ship after the full claim Atlas, buy resources, resupply fleet.
- - autoStake: `true` or `false` to automatically stake ships found in your inventory.
+ - WATT_CLAIM_TRIGGER: Sets the amount of WATT you want the script to auto-collect your pending WATT.
+ - WATT_AUTO_BUY: Set the item id that you want to .
 
 ## Optional arguments:
 
