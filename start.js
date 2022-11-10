@@ -606,10 +606,7 @@ const reset = async () =>
     .then(startInterval)
     .catch((err) => printError(err));
 
-const init = async () => {
-  startInputTracking();
-  await runProcess();
-};
+const init = async () => await runProcess();
 
 const startInterval = async () => {
   if (args.noRunningProcess !== "true") {
@@ -635,3 +632,4 @@ const printError = (e) =>
 init()
   .then(startInterval)
   .catch((err) => printError(err));
+startInputTracking();
