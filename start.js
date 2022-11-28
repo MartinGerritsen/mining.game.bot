@@ -13,6 +13,8 @@ const {
   wattClaimTrigger,
   wattAutoBuy,
   donationAddress,
+  trackDonations,
+  wattAutoGroup,
 } = require("./lib/config");
 const {
   wattToken,
@@ -81,27 +83,34 @@ const getBalances = async (manual = false) => {
   const donatedMatic =
     (await maticTokenContract.balanceOf(donate.address)) / decimals;
 
-  if(!lastDonatedWatt) {
+  if (trackDonations && !lastDonatedWatt) {
     lastDonatedWatt = donatedWatt;
-  } else if (lastDonatedWatt !== donatedWatt) {
+  } else if (trackDonations && lastDonatedWatt !== donatedWatt) {
     const donatedAmount = donatedWatt - lastDonatedWatt;
-    Write.printLine([{
-      text: `\n !!! Donations received !!!`,
-      color: Write.colors.fgMagenta,
-    },{
-      text: `\n !!! ${(donatedAmount).toFixed(2)} has been donated !!!\n`,
-      color: Write.colors.fgMagenta,
-    }]);
+    Write.printLine([
+      {
+        text: `\n !!! Donations received !!!`,
+        color: Write.colors.fgMagenta,
+      },
+      {
+        text: `\n !!! ${donatedAmount.toFixed(2)} has been donated !!!\n`,
+        color: Write.colors.fgMagenta,
+      },
+    ]);
 
     lastDonatedWatt = donatedWatt;
     totalDonatedWattSession += donatedAmount;
   }
 
-  if(!!totalDonatedWattSession) {
-    Write.printLine([{
-      text: `\n ${(totalDonatedWattSession).toFixed(2)} has been donated this session!\n`,
-      color: Write.colors.fgMagenta,
-    }]);
+  if (trackDonations && !!totalDonatedWattSession) {
+    Write.printLine([
+      {
+        text: `\n ${totalDonatedWattSession.toFixed(
+          2
+        )} has been donated this session!\n`,
+        color: Write.colors.fgMagenta,
+      },
+    ]);
   }
 
   Write.printLine({
@@ -176,46 +185,81 @@ const gatherStakingItems = async (manual = false) => {
   });
 };
 
-const claimWatt = async (manual = false) => {
+const claimWatt = async (manual = false, buyProcess = false) => {
   if (manual) {
     Write.printLine({
       text: ` Starting claim WATT process.`,
       color: Write.colors.fgYellow,
     });
   }
+
   let total = 0;
   let counter = 0;
   for (const stakingItem of stakingItems) {
     if (stakingItem.pending > 50) {
       total = total + stakingItem.pending;
-      const estimatedGas = await miningGameContract.estimateGas.withdrawRewards(
-        stakingItem.id
-      );
-      const gasPrice = await provider.getGasPrice();
       const nftItem = nftItems.find((item) => item.id === stakingItem.tokenId);
-
-      const unsignedTx = {
-        ...(await miningGameContract.populateTransaction.withdrawRewards(
+      if (
+        wattAutoGroup &&
+        buyProcess &&
+        !!wattAutoBuy &&
+        wattAutoBuy === stakingItem.tokenId.toString()
+      ) {
+        const estimatedGas = await miningGameContract.estimateGas.unstake(
           stakingItem.id
-        )),
-        chainId: 137,
-        gasLimit: estimatedGas,
-        gasPrice: gasPrice,
-        nonce: await provider.getTransactionCount(user.address, "pending"),
-      };
+        );
+        const gasPrice = await provider.getGasPrice();
 
-      counter++;
-      const signedTx = await wallet.signTransaction(unsignedTx);
-      const transaction = await provider.sendTransaction(signedTx);
-      Write.printLine({
-        text: ` Claiming WATT claim from ${nftItem.name} (${stakingItem.amount}).`,
-        color: Write.colors.fgYellow,
-      });
-      await transaction.wait(1);
-      Write.printLine({
-        text: ` Finished claiming WATT claim from ${nftItem.name} (${stakingItem.amount}).`,
-        color: Write.colors.fgYellow,
-      });
+        const unsignedTx = {
+          ...(await miningGameContract.populateTransaction.unstake(
+            stakingItem.id
+          )),
+          chainId: 137,
+          gasLimit: estimatedGas,
+          gasPrice: gasPrice,
+          nonce: await provider.getTransactionCount(user.address, "pending"),
+        };
+
+        counter++;
+        const signedTx = await wallet.signTransaction(unsignedTx);
+        const transaction = await provider.sendTransaction(signedTx);
+        Write.printLine({
+          text: ` Unstaking ${nftItem.name} (${stakingItem.amount}), claiming WATT.`,
+          color: Write.colors.fgYellow,
+        });
+        await transaction.wait(1);
+        Write.printLine({
+          text: ` Finished unstaking ${nftItem.name} (${stakingItem.amount}), claiming WATT.`,
+          color: Write.colors.fgYellow,
+        });
+      } else {
+        const estimatedGas =
+          await miningGameContract.estimateGas.withdrawRewards(stakingItem.id);
+        const gasPrice = await provider.getGasPrice();
+
+        const unsignedTx = {
+          ...(await miningGameContract.populateTransaction.withdrawRewards(
+            stakingItem.id
+          )),
+          chainId: 137,
+          gasLimit: estimatedGas,
+          gasPrice: gasPrice,
+          nonce: await provider.getTransactionCount(user.address, "pending"),
+        };
+
+        counter++;
+        const signedTx = await wallet.signTransaction(unsignedTx);
+        const transaction = await provider.sendTransaction(signedTx);
+        Write.printLine({
+          text: ` Claiming WATT claim from ${nftItem.name} (${stakingItem.amount}).`,
+          color: Write.colors.fgYellow,
+        });
+        await transaction.wait(1);
+        Write.printLine({
+          text: ` Finished claiming WATT claim from ${nftItem.name} (${stakingItem.amount}).`,
+          color: Write.colors.fgYellow,
+        });
+      }
     }
   }
 
@@ -401,19 +445,23 @@ const gatherInformation = async () => {
       text: `\n Available WATT: ${balances.watt.toFixed(3)}`,
       color: Write.colors.fgGreen,
     },
-    {
-      text: `\n\n --- Donate wallet ---`,
-      color: Write.colors.fgGreen,
-    },
-    {
-      text: `\n Available MATIC: ${balances.donatedMatic.toFixed(3)}`,
-      color: Write.colors.fgGreen,
-    },
-    {
-      text: `\n Available WATT: ${balances.donatedWatt.toFixed(3)}`,
-      color: Write.colors.fgGreen,
-    },
   ]);
+  if (trackDonations) {
+    Write.printLine([
+      {
+        text: `\n\n --- Donate wallet ---`,
+        color: Write.colors.fgGreen,
+      },
+      {
+        text: `\n Available MATIC: ${balances.donatedMatic.toFixed(3)}`,
+        color: Write.colors.fgGreen,
+      },
+      {
+        text: `\n Available WATT: ${balances.donatedWatt.toFixed(3)}`,
+        color: Write.colors.fgGreen,
+      },
+    ]);
+  }
 };
 
 const checkTriggers = async () => {
@@ -424,7 +472,7 @@ const checkTriggers = async () => {
     );
 
     if (totalPendingWatt > wattClaimTrigger) {
-      await claimWatt();
+      await claimWatt(false, !!wattAutoBuy);
     }
   }
 

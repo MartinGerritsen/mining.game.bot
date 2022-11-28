@@ -27,7 +27,8 @@ Then the final steps, remember to be careful with your private key!
 The following values are optional in the `.env`:
 
  - WATT_CLAIM_TRIGGER: Sets the amount of WATT you want the script to auto-collect your pending WATT.
- - WATT_AUTO_BUY: Set the item id that you want to .
+ - WATT_AUTO_BUY: Set the item id that you want to buy.
+ - WATT_AUTO_GROUP: On auto buy trigger, unstake and group NFTs.
 
 ## Optional arguments:
 
