@@ -9,9 +9,12 @@ const Write = require("./lib/write");
 const {
   decimals,
   user,
+  donate,
   wattClaimTrigger,
   wattAutoBuy,
   donationAddress,
+  trackDonations,
+  wattAutoGroup,
 } = require("./lib/config");
 const {
   wattToken,
@@ -19,7 +22,6 @@ const {
   miningGame,
   miningGameNft,
   miningGameMarket,
-  multiSend,
 } = require("./lib/contracts");
 
 const intervalTime = args.interval || 3600000; // every hour
@@ -54,16 +56,13 @@ const miningGameMarketContract = new ethers.Contract(
   miningGameMarket.abi,
   signer
 );
-const multiSendContract = new ethers.Contract(
-  multiSend.address,
-  multiSend.abi,
-  signer
-);
 
 let runningProcess;
 let isFreeMintStaking = false;
 let balances = {};
 let wattClaimTriggerPercentage = 0;
+let lastDonatedWatt = 0;
+let totalDonatedWattSession = 0;
 const nftItems = [];
 const inventoryItems = [];
 const stakingItems = [];
@@ -79,6 +78,41 @@ const getBalances = async (manual = false) => {
   const watt = (await wattTokenContract.balanceOf(user.address)) / decimals;
   const matic = (await maticTokenContract.balanceOf(user.address)) / decimals;
 
+  const donatedWatt =
+    (await wattTokenContract.balanceOf(donate.address)) / decimals;
+  const donatedMatic =
+    (await maticTokenContract.balanceOf(donate.address)) / decimals;
+
+  if (trackDonations && !lastDonatedWatt) {
+    lastDonatedWatt = donatedWatt;
+  } else if (trackDonations && lastDonatedWatt !== donatedWatt) {
+    const donatedAmount = donatedWatt - lastDonatedWatt;
+    Write.printLine([
+      {
+        text: `\n !!! Donations received !!!`,
+        color: Write.colors.fgMagenta,
+      },
+      {
+        text: `\n !!! ${donatedAmount.toFixed(2)} has been donated !!!\n`,
+        color: Write.colors.fgMagenta,
+      },
+    ]);
+
+    lastDonatedWatt = donatedWatt;
+    totalDonatedWattSession += donatedAmount;
+  }
+
+  if (trackDonations && !!totalDonatedWattSession) {
+    Write.printLine([
+      {
+        text: `\n ${totalDonatedWattSession.toFixed(
+          2
+        )} has been donated this session!\n`,
+        color: Write.colors.fgMagenta,
+      },
+    ]);
+  }
+
   Write.printLine({
     text: " Balances gathered.",
     color: Write.colors.fgYellow,
@@ -86,6 +120,8 @@ const getBalances = async (manual = false) => {
   balances = {
     watt,
     matic,
+    donatedWatt,
+    donatedMatic,
   };
 };
 
@@ -149,46 +185,81 @@ const gatherStakingItems = async (manual = false) => {
   });
 };
 
-const claimWatt = async (manual = false) => {
+const claimWatt = async (manual = false, buyProcess = false) => {
   if (manual) {
     Write.printLine({
       text: ` Starting claim WATT process.`,
       color: Write.colors.fgYellow,
     });
   }
+
   let total = 0;
   let counter = 0;
   for (const stakingItem of stakingItems) {
     if (stakingItem.pending > 50) {
       total = total + stakingItem.pending;
-      const estimatedGas = await miningGameContract.estimateGas.withdrawRewards(
-        stakingItem.id
-      );
-      const gasPrice = await provider.getGasPrice();
       const nftItem = nftItems.find((item) => item.id === stakingItem.tokenId);
-
-      const unsignedTx = {
-        ...(await miningGameContract.populateTransaction.withdrawRewards(
+      if (
+        wattAutoGroup &&
+        buyProcess &&
+        !!wattAutoBuy &&
+        wattAutoBuy === stakingItem.tokenId.toString()
+      ) {
+        const estimatedGas = await miningGameContract.estimateGas.unstake(
           stakingItem.id
-        )),
-        chainId: 137,
-        gasLimit: estimatedGas,
-        gasPrice: gasPrice,
-        nonce: await provider.getTransactionCount(user.address, "pending"),
-      };
+        );
+        const gasPrice = await provider.getGasPrice();
 
-      counter++;
-      const signedTx = await wallet.signTransaction(unsignedTx);
-      const transaction = await provider.sendTransaction(signedTx);
-      Write.printLine({
-        text: ` Claiming WATT claim from ${nftItem.name} (${stakingItem.amount}).`,
-        color: Write.colors.fgYellow,
-      });
-      await transaction.wait(1);
-      Write.printLine({
-        text: ` Finished claiming WATT claim from ${nftItem.name} (${stakingItem.amount}).`,
-        color: Write.colors.fgYellow,
-      });
+        const unsignedTx = {
+          ...(await miningGameContract.populateTransaction.unstake(
+            stakingItem.id
+          )),
+          chainId: 137,
+          gasLimit: estimatedGas,
+          gasPrice: gasPrice,
+          nonce: await provider.getTransactionCount(user.address, "pending"),
+        };
+
+        counter++;
+        const signedTx = await wallet.signTransaction(unsignedTx);
+        const transaction = await provider.sendTransaction(signedTx);
+        Write.printLine({
+          text: ` Unstaking ${nftItem.name} (${stakingItem.amount}), claiming WATT.`,
+          color: Write.colors.fgYellow,
+        });
+        await transaction.wait(1);
+        Write.printLine({
+          text: ` Finished unstaking ${nftItem.name} (${stakingItem.amount}), claiming WATT.`,
+          color: Write.colors.fgYellow,
+        });
+      } else {
+        const estimatedGas =
+          await miningGameContract.estimateGas.withdrawRewards(stakingItem.id);
+        const gasPrice = await provider.getGasPrice();
+
+        const unsignedTx = {
+          ...(await miningGameContract.populateTransaction.withdrawRewards(
+            stakingItem.id
+          )),
+          chainId: 137,
+          gasLimit: estimatedGas,
+          gasPrice: gasPrice,
+          nonce: await provider.getTransactionCount(user.address, "pending"),
+        };
+
+        counter++;
+        const signedTx = await wallet.signTransaction(unsignedTx);
+        const transaction = await provider.sendTransaction(signedTx);
+        Write.printLine({
+          text: ` Claiming WATT claim from ${nftItem.name} (${stakingItem.amount}).`,
+          color: Write.colors.fgYellow,
+        });
+        await transaction.wait(1);
+        Write.printLine({
+          text: ` Finished claiming WATT claim from ${nftItem.name} (${stakingItem.amount}).`,
+          color: Write.colors.fgYellow,
+        });
+      }
     }
   }
 
@@ -367,14 +438,30 @@ const gatherInformation = async () => {
       color: Write.colors.fgGreen,
     },
     {
-      text: `\n Available WATT: ${balances.watt.toFixed(3)}`,
-      color: Write.colors.fgGreen,
-    },
-    {
       text: `\n Available MATIC: ${balances.matic.toFixed(3)}`,
       color: Write.colors.fgGreen,
     },
+    {
+      text: `\n Available WATT: ${balances.watt.toFixed(3)}`,
+      color: Write.colors.fgGreen,
+    },
   ]);
+  if (trackDonations) {
+    Write.printLine([
+      {
+        text: `\n\n --- Donate wallet ---`,
+        color: Write.colors.fgGreen,
+      },
+      {
+        text: `\n Available MATIC: ${balances.donatedMatic.toFixed(3)}`,
+        color: Write.colors.fgGreen,
+      },
+      {
+        text: `\n Available WATT: ${balances.donatedWatt.toFixed(3)}`,
+        color: Write.colors.fgGreen,
+      },
+    ]);
+  }
 };
 
 const checkTriggers = async () => {
@@ -385,7 +472,7 @@ const checkTriggers = async () => {
     );
 
     if (totalPendingWatt > wattClaimTrigger) {
-      await claimWatt();
+      await claimWatt(false, !!wattAutoBuy);
     }
   }
 
@@ -478,7 +565,7 @@ const orderFromMarket = async (id, manual = false, onInit = false) => {
   }
 };
 
-const donate = async () => {
+const startDonation = async () => {
   Write.printLine([
     {
       text: "\n You have offered to start a donation, thank you!",
@@ -516,34 +603,38 @@ const donate = async () => {
         },
       ]);
       const donationWithDecimals = (donationAmount * decimals).toString();
-      const donationProps = [
-        donationAddress,
-        donationWithDecimals
-      ];
+      const donationProps = [donationAddress, donationWithDecimals];
 
       const unsignedDonationTransaction = {
-          ...(await wattTokenContract.populateTransaction.transfer(
-              ...donationProps
-          )),
+        ...(await wattTokenContract.populateTransaction.transfer(
+          ...donationProps
+        )),
         nonce: provider.getTransactionCount(user.address, "latest"),
         gasLimit: await wattTokenContract.estimateGas.transfer(
-            ...donationProps
+          ...donationProps
         ),
         gasPrice: await provider.getGasPrice(),
         chainId: 137,
-      }
+      };
 
-      const signedDonationTransaction = await wallet.signTransaction(unsignedDonationTransaction);
-      const donationTransaction = await provider.sendTransaction(signedDonationTransaction);
+      const signedDonationTransaction = await wallet.signTransaction(
+        unsignedDonationTransaction
+      );
+      const donationTransaction = await provider.sendTransaction(
+        signedDonationTransaction
+      );
       await donationTransaction.wait(1);
 
-      Write.printLine([{
-        text: ` Donated ${donationAmount} WATT to ${donationAddress}, thank you!`,
-        color: Write.colors.fgGreen,
-      },{
-        text: `\n For tx details: https://polygonscan.com/tx/${donationTransaction.hash}.`,
-        color: Write.colors.fgGreen,
-      }]);
+      Write.printLine([
+        {
+          text: ` Donated ${donationAmount} WATT to ${donationAddress}, thank you!`,
+          color: Write.colors.fgGreen,
+        },
+        {
+          text: `\n For tx details: https://polygonscan.com/tx/${donationTransaction.hash}.`,
+          color: Write.colors.fgGreen,
+        },
+      ]);
       await gatherInformation();
     } catch (e) {
       printError(e);
@@ -588,7 +679,7 @@ const startInputTracking = () => {
     } else if (character?.toString() === "c") {
       return claimWatt(true);
     } else if (character?.toString() === "d") {
-      return donate();
+      return startDonation();
     } else if (character?.toString() === "r") {
       clearInterval(runningProcess);
       return reset();
