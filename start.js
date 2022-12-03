@@ -15,6 +15,7 @@ const {
   donationAddress,
   trackDonations,
   wattAutoGroup,
+  donationPercentage,
 } = require("./lib/config");
 const {
   wattToken,
@@ -23,6 +24,7 @@ const {
   miningGameNft,
   miningGameMarket,
 } = require("./lib/contracts");
+const { hexlify } = require("ethers/lib/utils");
 
 const intervalTime = args.interval || 3600000; // every hour
 const provider = new ethers.providers.JsonRpcProvider(
@@ -217,7 +219,9 @@ const claimWatt = async (manual = false, buyProcess = false) => {
           chainId: 137,
           gasLimit: estimatedGas,
           gasPrice: gasPrice,
-          nonce: await provider.getTransactionCount(user.address, "pending"),
+          nonce: hexlify(
+            await provider.getTransactionCount(user.address, "latest")
+          ),
         };
 
         counter++;
@@ -244,7 +248,9 @@ const claimWatt = async (manual = false, buyProcess = false) => {
           chainId: 137,
           gasLimit: estimatedGas,
           gasPrice: gasPrice,
-          nonce: await provider.getTransactionCount(user.address, "pending"),
+          nonce: hexlify(
+            await provider.getTransactionCount(user.address, "latest")
+          ),
         };
 
         counter++;
@@ -361,7 +367,9 @@ const stakeItems = async (manual = false) => {
             chainId: 137,
             gasLimit: estimatedGas,
             gasPrice,
-            nonce: await provider.getTransactionCount(user.address, "pending"),
+            nonce: hexlify(
+              await provider.getTransactionCount(user.address, "latest")
+            ),
           };
 
           const signedTx = await wallet.signTransaction(unsignedTx);
@@ -494,8 +502,15 @@ const orderFromMarket = async (id, manual = false, onInit = false) => {
     );
 
     const pricePerToken = marketOrder.buyoutPricePerToken.toString();
-    if (balances.watt >= pricePerToken / decimals) {
-      const quantity = Math.floor(balances.watt / (pricePerToken / decimals));
+    const donationAmountPerToken = pricePerToken * (donationPercentage / 100);
+    if (
+      balances.watt >=
+      pricePerToken / decimals + donationAmountPerToken / decimals
+    ) {
+      const quantity = Math.floor(
+        balances.watt /
+          (pricePerToken / decimals + donationAmountPerToken / decimals)
+      );
       const totalCost = marketOrder.buyoutPricePerToken.mul(quantity);
 
       try {
@@ -511,10 +526,24 @@ const orderFromMarket = async (id, manual = false, onInit = false) => {
           chainId: 137,
           gasLimit: estimatedApproveGas,
           gasPrice: await provider.getGasPrice(),
-          nonce: await provider.getTransactionCount(user.address, "pending"),
+          nonce: hexlify(
+            await provider.getTransactionCount(user.address, "latest")
+          ),
         };
         const signedApproveTx = await wallet.signTransaction(unsignedApproveTx);
-        await provider.sendTransaction(signedApproveTx);
+        const approveTransaction = await provider.sendTransaction(
+          signedApproveTx
+        );
+        Write.printLine({
+          text: ` Approving usage of ${totalCost / decimals} WATT.`,
+          color: Write.colors.fgYellow,
+        });
+        await approveTransaction.wait(1);
+        Write.printLine({
+          text: ` Approved usage of ${totalCost / decimals} WATT.`,
+          color: Write.colors.fgYellow,
+        });
+
         const buyGasProps = [
           marketOrder.listingId,
           user.address,
@@ -532,12 +561,13 @@ const orderFromMarket = async (id, manual = false, onInit = false) => {
           chainId: 137,
           gasLimit: estimatedBuyGas,
           gasPrice: await provider.getGasPrice(),
-          nonce:
-            (await provider.getTransactionCount(user.address, "pending")) + 1,
+          nonce: hexlify(
+            await provider.getTransactionCount(user.address, "latest")
+          ),
         };
 
         const signedBuyTx = await wallet.signTransaction(unsignedBuyTx);
-        const transaction = await provider.sendTransaction(signedBuyTx);
+        const buyTransaction = await provider.sendTransaction(signedBuyTx);
         const nftItem = nftItems.find(
           (item) => item.id === marketOrder.tokenId.toNumber()
         );
@@ -546,11 +576,14 @@ const orderFromMarket = async (id, manual = false, onInit = false) => {
           text: ` Buying ${nftItem.name} (${quantity}).`,
           color: Write.colors.fgYellow,
         });
-        await transaction.wait(1);
+        await buyTransaction.wait(1);
         Write.printLine({
           text: ` Bought ${nftItem.name} (${quantity}).`,
           color: Write.colors.fgYellow,
         });
+        if (!!donationPercentage) {
+          await prepareDonation((donationAmountPerToken / decimals) * quantity);
+        }
         await getInventoryInformation(true);
         await stakeItems(true);
       } catch (e) {
@@ -565,6 +598,52 @@ const orderFromMarket = async (id, manual = false, onInit = false) => {
   }
 };
 
+const prepareDonation = async (donationAmount) => {
+  try {
+    Write.printLine([
+      {
+        text: ` Preparing donation of ${donationAmount} WATT`,
+        color: Write.colors.fgYellow,
+      },
+    ]);
+    const donationWithDecimals = (donationAmount * decimals).toString();
+    const donationProps = [donationAddress, donationWithDecimals];
+
+    const unsignedDonationTransaction = {
+      ...(await wattTokenContract.populateTransaction.transfer(
+        ...donationProps
+      )),
+      chainId: 137,
+      gasLimit: await wattTokenContract.estimateGas.transfer(...donationProps),
+      gasPrice: await provider.getGasPrice(),
+      nonce: hexlify(
+        await provider.getTransactionCount(user.address, "latest")
+      ),
+    };
+
+    const signedDonationTransaction = await wallet.signTransaction(
+      unsignedDonationTransaction
+    );
+    const donationTransaction = await provider.sendTransaction(
+      signedDonationTransaction
+    );
+    await donationTransaction.wait(1);
+
+    Write.printLine([
+      {
+        text: ` Donated ${donationAmount} WATT to ${donationAddress}, thank you!`,
+        color: Write.colors.fgGreen,
+      },
+      {
+        text: `\n For tx details: https://polygonscan.com/tx/${donationTransaction.hash}.`,
+        color: Write.colors.fgGreen,
+      },
+    ]);
+    await gatherInformation();
+  } catch (e) {
+    printError(e);
+  }
+};
 const startDonation = async () => {
   Write.printLine([
     {
@@ -595,50 +674,7 @@ const startDonation = async () => {
       },
     ]);
   } else {
-    try {
-      Write.printLine([
-        {
-          text: ` Preparing donation of ${donationAmount} WATT`,
-          color: Write.colors.fgYellow,
-        },
-      ]);
-      const donationWithDecimals = (donationAmount * decimals).toString();
-      const donationProps = [donationAddress, donationWithDecimals];
-
-      const unsignedDonationTransaction = {
-        ...(await wattTokenContract.populateTransaction.transfer(
-          ...donationProps
-        )),
-        nonce: provider.getTransactionCount(user.address, "latest"),
-        gasLimit: await wattTokenContract.estimateGas.transfer(
-          ...donationProps
-        ),
-        gasPrice: await provider.getGasPrice(),
-        chainId: 137,
-      };
-
-      const signedDonationTransaction = await wallet.signTransaction(
-        unsignedDonationTransaction
-      );
-      const donationTransaction = await provider.sendTransaction(
-        signedDonationTransaction
-      );
-      await donationTransaction.wait(1);
-
-      Write.printLine([
-        {
-          text: ` Donated ${donationAmount} WATT to ${donationAddress}, thank you!`,
-          color: Write.colors.fgGreen,
-        },
-        {
-          text: `\n For tx details: https://polygonscan.com/tx/${donationTransaction.hash}.`,
-          color: Write.colors.fgGreen,
-        },
-      ]);
-      await gatherInformation();
-    } catch (e) {
-      printError(e);
-    }
+    await prepareDonation(donationAmount);
   }
 };
 
