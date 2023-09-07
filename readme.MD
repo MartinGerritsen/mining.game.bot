@@ -36,6 +36,6 @@ The following values are optional in the `.env`:
 
 `node start.js --interval=6000000`
 
-### No Running Process (true / any)
+### No Running MiningProcess (true / any)
 
 `node start.js --noRunningProcess=true`
