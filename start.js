@@ -8,8 +8,7 @@ const Contracts = require("./lib/contracts");
 const MiningProcess = require("./lib/mining-process");
 
 const intervalTime = args.interval || 3600000; // every hour
-let runningMaticProcess;
-let runningAltProcess;
+let runningProcess;
 
 const exitProcess = async () => {
   Write.printLine({
@@ -20,8 +19,7 @@ const exitProcess = async () => {
     text: " Stopping process.",
     color: Write.colors.fgYellow,
   });
-  clearInterval(runningMaticProcess);
-  clearInterval(runningAltProcess);
+  clearInterval(runningProcess);
   process.exit(0);
 };
 
@@ -38,8 +36,7 @@ const startInputTracking = () => {
       //   return startDonation();
       // } else
       if (character?.toString() === "r") {
-        clearInterval(runningMaticProcess);
-        clearInterval(runningAltProcess);
+        clearInterval(runningProcess);
         return restartProcess();
         // } else if (character?.toString() === "s") {
         //   return stakeItems(true);
@@ -52,36 +49,21 @@ const startInputTracking = () => {
   }
 };
 
-const startProcess = () => {
+const startProcess = async () => {
   if (trackMatic) {
     const maticProcess = new MiningProcess("MATIC", Contracts.matic);
-    maticProcess.initialize().then((e) => {
-      if (args.noRunningProcess !== "true") {
-        clearInterval(runningMaticProcess);
-        runningMaticProcess = setInterval(startProcess, intervalTime);
-      }
+    await maticProcess.initialize();
+  }
+  if (trackAlt) {
+    const altProcess = new MiningProcess("ALT", Contracts.alt);
+    await altProcess.initialize();
+  }
 
-      if (trackAlt) {
-        const altProcess = new MiningProcess("ALT", Contracts.alt);
-        altProcess.initialize().then((e) => {
-          if (args.noRunningProcess !== "true") {
-            clearInterval(runningAltProcess);
-            Write.printActions();
-          }
-        });
-      } else if (args.noRunningProcess !== "true") {
-        Write.printActions();
-      }
-    });
-  } else if (trackAlt) {
-    const altProcess = new MiningProcess(Contracts.alt);
-    altProcess.initialize().then((e) => {
-      if (args.noRunningProcess !== "true") {
-        clearInterval(runningAltProcess);
-        runningAltProcess = setInterval(startProcess, intervalTime);
-        Write.printActions();
-      }
-    });
+  if (args.noRunningProcess !== "true") {
+    clearInterval(runningProcess);
+    runningProcess =
+      trackMatic || trackAlt ? setInterval(startProcess, intervalTime) : null;
+    Write.printActions();
   }
 };
 
@@ -90,8 +72,7 @@ const restartProcess = () => {
     text: "\n Button 'r' pressed, refreshing",
     color: Write.colors.fgYellow,
   });
-  clearInterval(runningMaticProcess);
-  clearInterval(runningAltProcess);
+  clearInterval(runningProcess);
   startProcess();
 };
 
